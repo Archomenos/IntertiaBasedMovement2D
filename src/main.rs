@@ -1,6 +1,6 @@
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle, utils::HashMap};
 use noise::{NoiseFn, SuperSimplex};
-use std::time::Duration;
+use std::{time::Duration, collections::hash_map};
 #[derive(Component)]
 struct MovementGrid {
     grid: Vec<Vec<u8>>,
@@ -221,7 +221,10 @@ fn calculate_a_star(
         }
         match movement_grid_q.get_single_mut() {
             Ok(mut movement_grid) => {
-                
+                let mut last_step : Vec2 = Vec2{x : transform.translation.x, y: transform.translation.y};
+                let mut cost_map : HashMap<Vec2, f64> = HashMap::new();
+                while last_step != movcmd.target{
+                }
             }
             Err(error) => {
                 println!("{:?}", error);
