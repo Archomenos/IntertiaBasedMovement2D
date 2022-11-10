@@ -35,8 +35,8 @@ fn main() {
             bevy::app::StartupStage::PostStartup,
             generate_obstacles.after(generate_grid),
         )
-        .add_system(move_a_star)
-    .add_system(print_grid)
+        // .add_system(move_a_star)
+    // .add_system(print_grid)
         .run();
 }
 
