@@ -18,6 +18,13 @@ struct GridSettings {
     x_y_offset: Vec2,
     density: f64,
 }
+struct PathNode {
+    pos : Vec2,
+    heading : f64
+}
+struct Path{
+    path : Vec<PathNode>
+}
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -35,8 +42,8 @@ fn main() {
             bevy::app::StartupStage::PostStartup,
             generate_obstacles.after(generate_grid),
         )
-        // .add_system(move_a_star)
-    // .add_system(print_grid)
+        .add_system(move_a_star)
+        .add_system(print_grid)
         .run();
 }
 
@@ -192,7 +199,7 @@ fn generate_obstacles(
     }
 }
 
-fn move_a_star(
+fn move_unit(
     time: Res<Time>,
     mut timer: ResMut<Timer>,
     mut movables: Query<(Entity, &mut Transform, &MoveCommand)>,
@@ -202,3 +209,25 @@ fn move_a_star(
         for (entity, transform, movecommand) in movables.iter() {}
     }
 }
+fn calculate_a_star(
+    mut movables: Query<(Entity, &mut Transform, &MoveCommand)>,
+    mut movement_grid_q: Query<&mut MovementGrid>,
+    mut commands: Commands
+){
+    for (entity, transform, movcmd) in movables.iter(){
+        if transform.translation.x == movcmd.target.x && transform.translation.y == movcmd.target.y{
+            commands.entity(entity).remove::<MoveCommand>();
+            continue;
+        }
+        match movement_grid_q.get_single_mut() {
+            Ok(mut movement_grid) => {
+                
+            }
+            Err(error) => {
+                println!("{:?}", error);
+                return;
+            }
+        }
+    
+    }
+} 
