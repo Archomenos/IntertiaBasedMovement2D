@@ -108,7 +108,9 @@ fn setup(
             ..default()
         })
         .insert(Movable {})
-        .insert(MoveCommand {target : Vec2{x: 20.0, y: 20.0}});
+        .insert(MoveCommand {
+            target: Vec2 { x: 20.0, y: 20.0 },
+        });
     commands.spawn_bundle(MaterialMesh2dBundle {
         mesh: meshes
             .add(
@@ -244,10 +246,17 @@ fn calculate_a_star(
                 )]);
 
                 while !open_set.is_empty() {
-                    // let mut current_node, current_cost : 
+                    // let mut current_node, current_cost :
                     let mut count_vec: Vec<_> = open_set.iter().collect();
                     count_vec.sort_by_key(|a| a.1);
-                    println!("lowest node {} with {}", count_vec[0].0, count_vec[0].1);
+                    let current: (UVec2, u64) = (count_vec[0].0.clone(), count_vec[0].1.clone());
+
+                    open_set.remove(&current.0);
+                    for neighbour in get_neighbours(&current.0, &movement_grid) {
+                        println!("{}", neighbour);
+                        let tentative_g_score : u64 = current.1 + (neighbour.as_vec2().distance(movcmd.target) * 100.0) as u32;
+                        
+                    }
                 }
             }
             Err(error) => {
@@ -256,4 +265,27 @@ fn calculate_a_star(
             }
         }
     }
+}
+fn get_neighbours(current: &UVec2, movement_grid: &MovementGrid) -> Vec<UVec2> {
+    let mut adjacent_cells: Vec<UVec2> = Vec::new();
+    for x in -1..2 {
+        for y in -1..2 {
+            let adjacent_cell: IVec2 = IVec2 {
+                x: current.x as i32 + x,
+                y: current.y as i32 + y,
+            };
+            if adjacent_cell.x >= 0
+                && (adjacent_cell.x as usize) < movement_grid.grid.len()
+                && adjacent_cell.y >= 0
+                && (adjacent_cell.y as usize) < movement_grid.grid[0].len()
+                && movement_grid.grid[adjacent_cell.x as usize][adjacent_cell.y as usize] == 0
+            {
+                adjacent_cells.push(UVec2 {
+                    x: adjacent_cell.x as u32,
+                    y: adjacent_cell.y as u32,
+                });
+            }
+        }
+    }
+    return adjacent_cells;
 }
