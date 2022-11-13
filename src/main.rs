@@ -1,6 +1,6 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle, utils::HashMap};
 use noise::{NoiseFn, SuperSimplex};
-use std::{time::Duration, collections::hash_map};
+use std::{collections::hash_map, time::Duration};
 #[derive(Component)]
 struct MovementGrid {
     grid: Vec<Vec<u8>>,
@@ -11,6 +11,7 @@ struct MoveCommand {
 }
 #[derive(Component)]
 struct Movable {}
+#[derive(Resource)]
 struct GridSettings {
     cell_size: f32,
     grid_width: u32,
@@ -19,12 +20,15 @@ struct GridSettings {
     density: f64,
 }
 struct PathNode {
-    pos : Vec2,
-    heading : f64
+    pos: Vec2,
+    heading: f64,
 }
-struct Path{
-    path : Vec<PathNode>
+struct Path {
+    path: Vec<PathNode>,
 }
+#[derive(Resource)]
+struct AStarTimer(Timer);
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -35,27 +39,31 @@ fn main() {
             x_y_offset: Vec2::new(500.0, 500.0),
             density: 0.4,
         })
-        .insert_resource(Timer::new(Duration::from_millis(500), true))
+        .insert_resource(AStarTimer(Timer::new(
+            Duration::from_millis(500),
+            TimerMode::Repeating,
+        )))
         .add_startup_system(setup)
         .add_startup_system(generate_grid)
         .add_startup_system_to_stage(
             bevy::app::StartupStage::PostStartup,
             generate_obstacles.after(generate_grid),
         )
-        .add_system(move_a_star)
-        .add_system(print_grid)
+        .add_system(calculate_a_star)
+        // .add_system(print_grid)
         .run();
 }
 
-fn print_grid(mut movement_grid_q: Query<&mut MovementGrid>){
+fn print_grid(mut movement_grid_q: Query<&mut MovementGrid>) {
     println!("___________________");
     match movement_grid_q.get_single_mut() {
         Ok(mut movement_grid) => {
             for j in 0..movement_grid.grid[0].len() as usize {
-            for i in 0..movement_grid.grid.len() {
-
-                    print!("|{}", movement_grid.grid[i][movement_grid.grid[0].len() - 1 - j]);
-
+                for i in 0..movement_grid.grid.len() {
+                    print!(
+                        "|{}",
+                        movement_grid.grid[i][movement_grid.grid[0].len() - 1 - j]
+                    );
                 }
                 println!("|")
             }
@@ -99,7 +107,8 @@ fn setup(
             ),
             ..default()
         })
-        .insert(Movable {});
+        .insert(Movable {})
+        .insert(MoveCommand {target : Vec2{x: 20.0, y: 20.0}});
     commands.spawn_bundle(MaterialMesh2dBundle {
         mesh: meshes
             .add(
@@ -148,7 +157,7 @@ fn generate_grid(
             });
         }
     }
-    commands.spawn().insert(movement_grid);
+    commands.spawn((movement_grid));
     println!("inserted");
 }
 
@@ -201,29 +210,44 @@ fn generate_obstacles(
 
 fn move_unit(
     time: Res<Time>,
-    mut timer: ResMut<Timer>,
+    mut timer: ResMut<AStarTimer>,
     mut movables: Query<(Entity, &mut Transform, &MoveCommand)>,
 ) {
-    timer.tick(time.delta());
-    if timer.finished() {
+    timer.0.tick(time.delta());
+    if timer.0.finished() {
         for (entity, transform, movecommand) in movables.iter() {}
     }
 }
 fn calculate_a_star(
     mut movables: Query<(Entity, &mut Transform, &MoveCommand)>,
     mut movement_grid_q: Query<&mut MovementGrid>,
-    mut commands: Commands
-){
-    for (entity, transform, movcmd) in movables.iter(){
-        if transform.translation.x == movcmd.target.x && transform.translation.y == movcmd.target.y{
+    mut commands: Commands,
+) {
+    for (entity, transform, movcmd) in movables.iter() {
+        if transform.translation.x == movcmd.target.x && transform.translation.y == movcmd.target.y
+        {
             commands.entity(entity).remove::<MoveCommand>();
             continue;
         }
         match movement_grid_q.get_single_mut() {
             Ok(mut movement_grid) => {
-                let mut last_step : Vec2 = Vec2{x : transform.translation.x, y: transform.translation.y};
-                let mut cost_map : HashMap<Vec2, f64> = HashMap::new();
-                while last_step != movcmd.target{
+                let mut last_step: Vec2 = Vec2 {
+                    x: transform.translation.x,
+                    y: transform.translation.y,
+                };
+                let mut open_set: HashMap<UVec2, u64> = HashMap::from([(
+                    UVec2 {
+                        x: transform.translation.x.floor() as u32,
+                        y: transform.translation.y.floor() as u32,
+                    },
+                    0,
+                )]);
+
+                while !open_set.is_empty() {
+                    // let mut current_node, current_cost : 
+                    let mut count_vec: Vec<_> = open_set.iter().collect();
+                    count_vec.sort_by_key(|a| a.1);
+                    println!("lowest node {} with {}", count_vec[0].0, count_vec[0].1);
                 }
             }
             Err(error) => {
@@ -231,6 +255,5 @@ fn calculate_a_star(
                 return;
             }
         }
-    
     }
-} 
+}
