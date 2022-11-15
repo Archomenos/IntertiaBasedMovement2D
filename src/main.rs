@@ -1,6 +1,13 @@
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle, utils::HashMap};
+use bevy::{
+    prelude::*,
+    sprite::MaterialMesh2dBundle,
+    utils::{HashMap, HashSet},
+};
 use noise::{NoiseFn, SuperSimplex};
 use std::{collections::hash_map, time::Duration};
+
+const DISTANCE_FACTOR: f32 = 100.0;
+
 #[derive(Component)]
 struct MovementGrid {
     grid: Vec<Vec<u8>>,
@@ -220,11 +227,25 @@ fn move_unit(
         for (entity, transform, movecommand) in movables.iter() {}
     }
 }
+
+fn reconstruct_path(came_from: &HashMap<UVec2, UVec2>, end: UVec2) -> Vec<UVec2> {
+    let mut total_path: Vec<UVec2> = vec![end];
+
+    let mut current: UVec2 = end;
+    while came_from.contains_key(&current) {
+        current = came_from[&current];
+        total_path.push(current);
+    }
+    println!("{:?}", total_path);
+    return total_path;
+}
+
 fn calculate_a_star(
     mut movables: Query<(Entity, &mut Transform, &MoveCommand)>,
     mut movement_grid_q: Query<&mut MovementGrid>,
     mut commands: Commands,
-) {
+) //-> Option<Vec<UVec2>>
+{
     for (entity, transform, movcmd) in movables.iter() {
         if transform.translation.x == movcmd.target.x && transform.translation.y == movcmd.target.y
         {
@@ -233,39 +254,71 @@ fn calculate_a_star(
         }
         match movement_grid_q.get_single_mut() {
             Ok(mut movement_grid) => {
-                let mut last_step: Vec2 = Vec2 {
-                    x: transform.translation.x,
-                    y: transform.translation.y,
+                let start: UVec2 = UVec2 {
+                    x: transform.translation.x.floor() as u32,
+                    y: transform.translation.y.floor() as u32,
                 };
-                let mut open_set: HashMap<UVec2, u64> = HashMap::from([(
-                    UVec2 {
-                        x: transform.translation.x.floor() as u32,
-                        y: transform.translation.y.floor() as u32,
-                    },
-                    0,
-                )]);
 
+                let mut f_score: HashMap<UVec2, u32> = HashMap::from([(
+                    start,
+                    (heuristical_distance(start, movcmd.target.as_uvec2()) * DISTANCE_FACTOR)
+                        as u32,
+                )]);
+                let mut g_score: HashMap<UVec2, u32> = HashMap::from([(start, 0)]);
+                let mut came_from: HashMap<UVec2, UVec2> = HashMap::new();
+                let mut open_set: HashSet<UVec2> = HashSet::from([start]);
                 while !open_set.is_empty() {
                     // let mut current_node, current_cost :
-                    let mut count_vec: Vec<_> = open_set.iter().collect();
+                    let mut count_vec: Vec<_> = f_score.iter().collect();
                     count_vec.sort_by_key(|a| a.1);
-                    let current: (UVec2, u64) = (count_vec[0].0.clone(), count_vec[0].1.clone());
-
-                    open_set.remove(&current.0);
+                    let current: (UVec2, u32) = (count_vec[0].0.clone(), count_vec[0].1.clone());
+                    if current.0 == movcmd.target.as_uvec2() {
+                        reconstruct_path(&came_from, current.0);
+                    }
+                    open_set.retain(|&x| x != current.0);
                     for neighbour in get_neighbours(&current.0, &movement_grid) {
                         println!("{}", neighbour);
-                        let tentative_g_score : u64 = current.1 + (neighbour.as_vec2().distance(movcmd.target) * 100.0) as u32;
-                        
+                        let tentative_g_score: u32 = g_score[&current.0]
+                            + (neighbour.as_vec2().distance(movcmd.target) * DISTANCE_FACTOR)
+                                as u32;
+                        let mut new_path: bool = false;
+                        match g_score.get_mut(&neighbour) {
+                            Some(n_g_score) => {
+                                if tentative_g_score < *n_g_score {
+                                    *n_g_score = tentative_g_score;
+                                    new_path = true;
+                                }
+                            }
+                            None => {
+                                g_score.insert(neighbour, tentative_g_score);
+
+                                new_path = true;
+                            }
+                        }
+                        if new_path {
+                            f_score.insert(
+                                neighbour,
+                                (heuristical_distance(neighbour, movcmd.target.as_uvec2())
+                                    * DISTANCE_FACTOR) as u32,
+                            );
+                            came_from.insert(neighbour, current.0);
+                            open_set.insert(neighbour);
+                        }
                     }
                 }
             }
             Err(error) => {
                 println!("{:?}", error);
-                return;
             }
         }
     }
+    return; // None;
 }
+
+fn heuristical_distance(from: UVec2, to: UVec2) -> f32 {
+    return from.as_vec2().distance(to.as_vec2());
+}
+
 fn get_neighbours(current: &UVec2, movement_grid: &MovementGrid) -> Vec<UVec2> {
     let mut adjacent_cells: Vec<UVec2> = Vec::new();
     for x in -1..2 {
