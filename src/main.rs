@@ -116,7 +116,7 @@ fn setup(
         })
         .insert(Movable {})
         .insert(MoveCommand {
-            target: Vec2 { x: 20.0, y: 20.0 },
+            target: Vec2 { x: 7.0, y: 20.0 },
         });
     commands.spawn_bundle(MaterialMesh2dBundle {
         mesh: meshes
@@ -138,7 +138,35 @@ fn setup(
         ..default()
     });
 }
-
+// fn add_square(
+//     mut commands: Commands,
+//     asset_server: Res<AssetServer>,
+//     grid_settings: Res<GridSettings>,
+//     mut meshes: ResMut<Assets<Mesh>>,
+//     mut materials: ResMut<Assets<ColorMaterial>>,
+//     pos: UVec2,
+//     color: ColorMaterial,
+// ) -> MaterialMeshBundle {
+//     *commands.spawn_bundle(MaterialMesh2dBundle {
+//         mesh: meshes
+//             .add(
+//                 shape::Box::new(
+//                     grid_settings.cell_size,
+//                     grid_settings.cell_size,
+//                     grid_settings.cell_size,
+//                 )
+//                 .into(),
+//             )
+//             .into(),
+//         material: materials.add(color),
+//         transform: Transform::from_scale(Vec3::new(1.0, 1.0, 1.0)).with_translation(Vec3::new(
+//             pos.x as f32 * grid_settings.cell_size - grid_settings.x_y_offset.x,
+//             pos.y as f32 * grid_settings.cell_size - grid_settings.x_y_offset.y,
+//             1.0,
+//         )),
+//         ..default()
+//     });
+// }
 fn generate_grid(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -183,7 +211,7 @@ fn generate_obstacles(
         Ok(mut movement_grid) => {
             for i in 0..grid_settings.grid_width as usize {
                 for j in 0..grid_settings.grid_height as usize {
-                    println!("{}", noise_generator.get([i as f64, j as f64]));
+                    // println!("{}", noise_generator.get([i as f64, j as f64]));
                     if noise_generator.get([i as f64, j as f64]) > grid_settings.density {
                         movement_grid.grid[i][j] = 1;
                         commands.spawn_bundle(MaterialMesh2dBundle {
@@ -236,7 +264,7 @@ fn reconstruct_path(came_from: &HashMap<UVec2, UVec2>, end: UVec2) -> Vec<UVec2>
         current = came_from[&current];
         total_path.push(current);
     }
-    println!("{:?}", total_path);
+    // println!("{:?}", total_path);
     return total_path;
 }
 
@@ -244,6 +272,10 @@ fn calculate_a_star(
     mut movables: Query<(Entity, &mut Transform, &MoveCommand)>,
     mut movement_grid_q: Query<&mut MovementGrid>,
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    grid_settings: Res<GridSettings>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) //-> Option<Vec<UVec2>>
 {
     for (entity, transform, movcmd) in movables.iter() {
@@ -271,14 +303,55 @@ fn calculate_a_star(
                     // let mut current_node, current_cost :
                     let mut count_vec: Vec<_> = f_score.iter().collect();
                     count_vec.sort_by_key(|a| a.1);
-                    let current: (UVec2, u32) = (count_vec[0].0.clone(), count_vec[0].1.clone());
-                    if current.0 == movcmd.target.as_uvec2() {
-                        reconstruct_path(&came_from, current.0);
+                    let mut current: UVec2 = UVec2::ZERO;
+                    let mut current_cost = 0;
+                    for open_cell in open_set.clone() {
+                        match f_score.get(&open_cell) {
+                            Some(cell_f_score) => {
+                                if current_cost == 0 || *cell_f_score < current_cost {
+                                    current = open_cell;
+                                    current_cost = *cell_f_score;
+                                }
+                            }
+                            None => {}
+                        }
                     }
-                    open_set.retain(|&x| x != current.0);
-                    for neighbour in get_neighbours(&current.0, &movement_grid) {
+                    if current == movcmd.target.as_uvec2() {
+                        for node in reconstruct_path(&came_from, current) {
+                            commands.spawn_bundle(MaterialMesh2dBundle {
+                                mesh: meshes
+                                    .add(
+                                        shape::Box::new(
+                                            grid_settings.cell_size,
+                                            grid_settings.cell_size,
+                                            grid_settings.cell_size,
+                                        )
+                                        .into(),
+                                    )
+                                    .into(),
+                                material: materials.add(ColorMaterial::from(Color::BLUE)),
+                                transform: Transform::from_scale(Vec3::new(1.0, 1.0, 1.0))
+                                    .with_translation(Vec3::new(
+                                        node.x as f32 * grid_settings.cell_size
+                                            - grid_settings.x_y_offset.x,
+                                        node.y as f32 * grid_settings.cell_size
+                                            - grid_settings.x_y_offset.y,
+                                        1.0,
+                                    )),
+                                ..default()
+                            });
+                        }
+                        commands.entity(entity).remove::<MoveCommand>();
+                    }
+
+                    println!("openset before: {:?}", open_set);
+                    println!("removing {}", current);
+                    println!("is in set {}", open_set.contains(&current));
+                    open_set.remove(&current);
+                    println!("openset after: {:?}", open_set);
+                    for neighbour in get_neighbours(&current, &movement_grid) {
                         println!("{}", neighbour);
-                        let tentative_g_score: u32 = g_score[&current.0]
+                        let tentative_g_score: u32 = g_score[&current]
                             + (neighbour.as_vec2().distance(movcmd.target) * DISTANCE_FACTOR)
                                 as u32;
                         let mut new_path: bool = false;
@@ -301,7 +374,7 @@ fn calculate_a_star(
                                 (heuristical_distance(neighbour, movcmd.target.as_uvec2())
                                     * DISTANCE_FACTOR) as u32,
                             );
-                            came_from.insert(neighbour, current.0);
+                            came_from.insert(neighbour, current);
                             open_set.insert(neighbour);
                         }
                     }
