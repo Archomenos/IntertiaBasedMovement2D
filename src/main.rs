@@ -131,7 +131,7 @@ fn setup(
             .into(),
         material: materials.add(ColorMaterial::from(Color::GOLD)),
         transform: Transform::from_scale(Vec3::new(1.0, 1.0, 1.0)).with_translation(Vec3::new(
-            20 as f32 * grid_settings.cell_size - grid_settings.x_y_offset.x,
+            7 as f32 * grid_settings.cell_size - grid_settings.x_y_offset.x,
             20 as f32 * grid_settings.cell_size - grid_settings.x_y_offset.y,
             1.0,
         )),
@@ -318,6 +318,9 @@ fn calculate_a_star(
                     }
                     if current == movcmd.target.as_uvec2() {
                         for node in reconstruct_path(&came_from, current) {
+                            if node.x != transform.translation.x.floor() as u32 && node.y != transform.translation.y.floor() as u32 && node != movcmd.target.as_uvec2(){
+                                
+                            
                             commands.spawn_bundle(MaterialMesh2dBundle {
                                 mesh: meshes
                                     .add(
@@ -340,17 +343,12 @@ fn calculate_a_star(
                                     )),
                                 ..default()
                             });
+                            }
                         }
                         commands.entity(entity).remove::<MoveCommand>();
                     }
-
-                    println!("openset before: {:?}", open_set);
-                    println!("removing {}", current);
-                    println!("is in set {}", open_set.contains(&current));
                     open_set.remove(&current);
-                    println!("openset after: {:?}", open_set);
                     for neighbour in get_neighbours(&current, &movement_grid) {
-                        println!("{}", neighbour);
                         let tentative_g_score: u32 = g_score[&current]
                             + (neighbour.as_vec2().distance(movcmd.target) * DISTANCE_FACTOR)
                                 as u32;
