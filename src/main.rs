@@ -289,18 +289,18 @@ fn calculate_a_star(
         }
         match movement_grid_q.get_single_mut() {
             Ok(mut movement_grid) => {
-                let start: UVec2 = UVec2 {
-                    x: transform.translation.x.floor() as u32,
-                    y: transform.translation.y.floor() as u32,
-                };
-                // let start: AStarNode = AStarNode {
-                //                     pos: UVec2 {
-                //                         x: transform.translation.x.floor() as u32,
-                //                         y: transform.translation.y.floor() as u32,
-                //                     },
+                // let start: UVec2 = UVec2 {
+                //     x: transform.translation.x.floor() as u32,
+                //     y: transform.translation.y.floor() as u32,
+                // };
+                let start: AStarNode = AStarNode {
+                    pos: UVec2 {
+                        x: transform.translation.x.floor() as u32,
+                        y: transform.translation.y.floor() as u32,
+                    },
 
-                //                     heading: 0,
-                //                 };
+                    heading: 0,
+                };
                 let mut f_score: HashMap<UVec2, u32> = HashMap::from([(
                     start,
                     (heuristical_distance(start, movcmd.target.as_uvec2()) * DISTANCE_FACTOR)
