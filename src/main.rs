@@ -15,6 +15,7 @@ struct MovementGrid {
 #[derive(Component)]
 struct MoveCommand {
     target: Vec2,
+    path: Vec<UVec2>,
 }
 #[derive(Component)]
 struct Movable {}
@@ -47,7 +48,7 @@ fn main() {
             density: 0.4,
         })
         .insert_resource(AStarTimer(Timer::new(
-            Duration::from_millis(500),
+            Duration::from_millis(1500),
             TimerMode::Repeating,
         )))
         .add_startup_system(setup)
@@ -57,6 +58,7 @@ fn main() {
             generate_obstacles.after(generate_grid),
         )
         .add_system(calculate_a_star)
+        .add_system(visualise_path)
         // .add_system(print_grid)
         .run();
 }
@@ -114,9 +116,9 @@ fn setup(
             ),
             ..default()
         })
-        .insert(Movable {})
         .insert(MoveCommand {
             target: Vec2 { x: 7.0, y: 20.0 },
+            path: Vec::new(),
         });
     commands.spawn_bundle(MaterialMesh2dBundle {
         mesh: meshes
@@ -268,17 +270,18 @@ fn reconstruct_path(came_from: &HashMap<UVec2, UVec2>, end: UVec2) -> Vec<UVec2>
     return total_path;
 }
 
+struct AStarNode {
+    pos: UVec2,
+    heading: u8,
+}
+
 fn calculate_a_star(
-    mut movables: Query<(Entity, &mut Transform, &MoveCommand)>,
+    mut movables: Query<(Entity, &mut Transform, &mut MoveCommand), Without<Movable>>,
     mut movement_grid_q: Query<&mut MovementGrid>,
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    grid_settings: Res<GridSettings>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
 ) //-> Option<Vec<UVec2>>
 {
-    for (entity, transform, movcmd) in movables.iter() {
+    for (entity, transform, mut movcmd) in movables.iter_mut() {
         if transform.translation.x == movcmd.target.x && transform.translation.y == movcmd.target.y
         {
             commands.entity(entity).remove::<MoveCommand>();
@@ -290,7 +293,14 @@ fn calculate_a_star(
                     x: transform.translation.x.floor() as u32,
                     y: transform.translation.y.floor() as u32,
                 };
+                // let start: AStarNode = AStarNode {
+                //                     pos: UVec2 {
+                //                         x: transform.translation.x.floor() as u32,
+                //                         y: transform.translation.y.floor() as u32,
+                //                     },
 
+                //                     heading: 0,
+                //                 };
                 let mut f_score: HashMap<UVec2, u32> = HashMap::from([(
                     start,
                     (heuristical_distance(start, movcmd.target.as_uvec2()) * DISTANCE_FACTOR)
@@ -318,40 +328,22 @@ fn calculate_a_star(
                     }
                     if current == movcmd.target.as_uvec2() {
                         for node in reconstruct_path(&came_from, current) {
-                            if node.x != transform.translation.x.floor() as u32 && node.y != transform.translation.y.floor() as u32 && node != movcmd.target.as_uvec2(){
-                                
-                            
-                            commands.spawn_bundle(MaterialMesh2dBundle {
-                                mesh: meshes
-                                    .add(
-                                        shape::Box::new(
-                                            grid_settings.cell_size,
-                                            grid_settings.cell_size,
-                                            grid_settings.cell_size,
-                                        )
-                                        .into(),
-                                    )
-                                    .into(),
-                                material: materials.add(ColorMaterial::from(Color::BLUE)),
-                                transform: Transform::from_scale(Vec3::new(1.0, 1.0, 1.0))
-                                    .with_translation(Vec3::new(
-                                        node.x as f32 * grid_settings.cell_size
-                                            - grid_settings.x_y_offset.x,
-                                        node.y as f32 * grid_settings.cell_size
-                                            - grid_settings.x_y_offset.y,
-                                        1.0,
-                                    )),
-                                ..default()
-                            });
+                            if node.x != transform.translation.x.floor() as u32
+                                && node.y != transform.translation.y.floor() as u32
+                                && node != movcmd.target.as_uvec2()
+                            {
+                                movcmd.path.push(node);
                             }
+
+                            commands.entity(entity).insert(Movable {});
                         }
-                        commands.entity(entity).remove::<MoveCommand>();
+                        return;
                     }
                     open_set.remove(&current);
                     for neighbour in get_neighbours(&current, &movement_grid) {
                         let tentative_g_score: u32 = g_score[&current]
-                            + (neighbour.as_vec2().distance(movcmd.target) * DISTANCE_FACTOR)
-                                as u32;
+                            + (inertia_based_inter_cell_movement(current, neighbour)
+                                * DISTANCE_FACTOR) as u32;
                         let mut new_path: bool = false;
                         match g_score.get_mut(&neighbour) {
                             Some(n_g_score) => {
@@ -386,6 +378,67 @@ fn calculate_a_star(
     return; // None;
 }
 
+fn visualise_path(
+    mut movables: Query<(Entity, &mut Transform, &mut MoveCommand), With<Movable>>,
+    mut movement_grid_q: Query<&mut MovementGrid>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    grid_settings: Res<GridSettings>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    time: Res<Time>,
+    mut timer: ResMut<AStarTimer>,
+) {
+    timer.0.tick(time.delta());
+    if timer.0.finished() {
+        timer.0.set_duration(Duration::from_millis(150));
+        for (entity, transform, mut movcmd) in movables.iter_mut() {
+            let node: UVec2;
+            match movcmd.path.pop() {
+                Some(n) => node = n,
+                None => {
+                    commands.entity(entity).remove::<MoveCommand>();
+                    commands.entity(entity).remove::<Movable>();
+
+                    continue;
+                }
+            }
+            commands.spawn_bundle(MaterialMesh2dBundle {
+                mesh: meshes
+                    .add(
+                        shape::Box::new(
+                            grid_settings.cell_size,
+                            grid_settings.cell_size,
+                            grid_settings.cell_size,
+                        )
+                        .into(),
+                    )
+                    .into(),
+                material: materials.add(ColorMaterial::from(Color::BLUE)),
+                transform: Transform::from_scale(Vec3::new(1.0, 1.0, 1.0)).with_translation(
+                    Vec3::new(
+                        node.x as f32 * grid_settings.cell_size - grid_settings.x_y_offset.x,
+                        node.y as f32 * grid_settings.cell_size - grid_settings.x_y_offset.y,
+                        1.0,
+                    ),
+                ),
+                ..default()
+            });
+        }
+    }
+}
+
+// TBD
+fn inertia_based_inter_cell_movement(from: UVec2, to: UVec2) -> f32 {
+    let inertia: f32 = 0.0;
+    let penalty: f32 = 0.0;
+    let cost: f32 = from.as_vec2().distance(to.as_vec2()) + penalty;
+    println!(
+        "from {:?} to {:?} penalty {:?}, cost {:?}",
+        from, to, penalty, cost
+    );
+    return cost;
+}
 fn heuristical_distance(from: UVec2, to: UVec2) -> f32 {
     return from.as_vec2().distance(to.as_vec2());
 }
