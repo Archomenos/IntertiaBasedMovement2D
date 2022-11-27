@@ -7,6 +7,17 @@ use noise::{NoiseFn, SuperSimplex};
 use std::{collections::hash_map, time::Duration};
 
 const DISTANCE_FACTOR: f32 = 100.0;
+#[derive(Eq, PartialEq, Hash, Clone)]
+enum Heading {
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW
+}
 
 #[derive(Component)]
 struct MovementGrid {
@@ -15,7 +26,7 @@ struct MovementGrid {
 #[derive(Component)]
 struct MoveCommand {
     target: Vec2,
-    path: Vec<UVec2>,
+    path: Vec<AStarNode>,
 }
 #[derive(Component)]
 struct Movable {}
@@ -258,10 +269,10 @@ fn move_unit(
     }
 }
 
-fn reconstruct_path(came_from: &HashMap<UVec2, UVec2>, end: UVec2) -> Vec<UVec2> {
-    let mut total_path: Vec<UVec2> = vec![end];
+fn reconstruct_path(came_from: &HashMap<AStarNode, AStarNode>, end: AStarNode) -> Vec<AStarNode> {
+    let mut total_path: Vec<AStarNode> = vec![end];
 
-    let mut current: UVec2 = end;
+    let mut current: AStarNode = end;
     while came_from.contains_key(&current) {
         current = came_from[&current];
         total_path.push(current);
@@ -269,12 +280,17 @@ fn reconstruct_path(came_from: &HashMap<UVec2, UVec2>, end: UVec2) -> Vec<UVec2>
     // println!("{:?}", total_path);
     return total_path;
 }
-
+#[derive(Hash, Eq, Clone)]
 struct AStarNode {
     pos: UVec2,
-    heading: u8,
+    heading: Heading,
 }
+impl PartialEq for AStarNode {
+    fn eq(&self, other: &Self) -> bool{
 
+        return self.pos == other.pos && self.heading == other.heading;
+    }
+}
 fn calculate_a_star(
     mut movables: Query<(Entity, &mut Transform, &mut MoveCommand), Without<Movable>>,
     mut movement_grid_q: Query<&mut MovementGrid>,
@@ -299,21 +315,21 @@ fn calculate_a_star(
                         y: transform.translation.y.floor() as u32,
                     },
 
-                    heading: 0,
+                    heading: Heading::N,
                 };
-                let mut f_score: HashMap<UVec2, u32> = HashMap::from([(
+                let mut f_score: HashMap<AStarNode, u32> = HashMap::from([(
                     start,
-                    (heuristical_distance(start, movcmd.target.as_uvec2()) * DISTANCE_FACTOR)
+                    (heuristical_distance(start, AStarNode{pos: movcmd.target.as_uvec2(), heading : Heading::N}) * DISTANCE_FACTOR)
                         as u32,
                 )]);
-                let mut g_score: HashMap<UVec2, u32> = HashMap::from([(start, 0)]);
-                let mut came_from: HashMap<UVec2, UVec2> = HashMap::new();
-                let mut open_set: HashSet<UVec2> = HashSet::from([start]);
+                let mut g_score: HashMap<AStarNode, u32> = HashMap::from([(start, 0)]);
+                let mut came_from: HashMap<AStarNode, AStarNode> = HashMap::new();
+                let mut open_set: HashSet<AStarNode> = HashSet::from([start]);
                 while !open_set.is_empty() {
                     // let mut current_node, current_cost :
                     let mut count_vec: Vec<_> = f_score.iter().collect();
                     count_vec.sort_by_key(|a| a.1);
-                    let mut current: UVec2 = UVec2::ZERO;
+                    let mut current: AStarNode = AStarNode{pos: UVec2::ZERO, heading: Heading::N};
                     let mut current_cost = 0;
                     for open_cell in open_set.clone() {
                         match f_score.get(&open_cell) {
@@ -326,11 +342,11 @@ fn calculate_a_star(
                             None => {}
                         }
                     }
-                    if current == movcmd.target.as_uvec2() {
+                    if current.pos == movcmd.target.as_uvec2() {
                         for node in reconstruct_path(&came_from, current) {
-                            if node.x != transform.translation.x.floor() as u32
-                                && node.y != transform.translation.y.floor() as u32
-                                && node != movcmd.target.as_uvec2()
+                            if node.pos.x != transform.translation.x.floor() as u32
+                                && node.pos.y != transform.translation.y.floor() as u32
+                                && node.pos != movcmd.target.as_uvec2()
                             {
                                 movcmd.path.push(node);
                             }
@@ -439,17 +455,39 @@ fn inertia_based_inter_cell_movement(from: UVec2, to: UVec2) -> f32 {
     );
     return cost;
 }
-fn heuristical_distance(from: UVec2, to: UVec2) -> f32 {
-    return from.as_vec2().distance(to.as_vec2());
+fn heuristical_distance(from: AStarNode, to: AStarNode) -> f32 {
+    return from.pos.as_vec2().distance(to.pos.as_vec2());
 }
-
-fn get_neighbours(current: &UVec2, movement_grid: &MovementGrid) -> Vec<UVec2> {
-    let mut adjacent_cells: Vec<UVec2> = Vec::new();
+fn calculate_heading(from: &UVec2, to: &UVec2) -> Heading{
+    let diff : IVec2 = from.as_ivec2() - to.as_ivec2();
+    let heading : Heading;
+    if diff.x == 1 && diff.y == 0{
+        heading = Heading::N
+    }
+    else if diff.x == 1 && diff.y == 1 {
+        heading = Heading::NE
+    }else if diff.x == 0 && diff.y == 1 {
+        heading = Heading::E
+    }else if diff.x == -1 && diff.y == 1 {
+        heading = Heading::SE
+    }else if diff.x == -1 && diff.y == 0 {
+        heading = Heading::S
+    }else if diff.x == -1 && diff.y == -1 {
+        heading = Heading::SW
+    }else if diff.x == 0 && diff.y == -1 {
+        heading = Heading::W
+    }else if diff.x == 1 && diff.y == -1 {
+        heading = Heading::NW
+    }
+    return heading;
+}
+fn get_neighbours(current: &AStarNode, movement_grid: &MovementGrid) -> Vec<AStarNode> {
+    let mut adjacent_cells: Vec<AStarNode> = Vec::new();
     for x in -1..2 {
         for y in -1..2 {
             let adjacent_cell: IVec2 = IVec2 {
-                x: current.x as i32 + x,
-                y: current.y as i32 + y,
+                x: current.pos.x as i32 + x,
+                y: current.pos.y as i32 + y,
             };
             if adjacent_cell.x >= 0
                 && (adjacent_cell.x as usize) < movement_grid.grid.len()
@@ -457,9 +495,11 @@ fn get_neighbours(current: &UVec2, movement_grid: &MovementGrid) -> Vec<UVec2> {
                 && (adjacent_cell.y as usize) < movement_grid.grid[0].len()
                 && movement_grid.grid[adjacent_cell.x as usize][adjacent_cell.y as usize] == 0
             {
-                adjacent_cells.push(UVec2 {
+                adjacent_cells.push(AStarNode { pos: UVec2 {
                     x: adjacent_cell.x as u32,
                     y: adjacent_cell.y as u32,
+                },
+                heading: calculate_heading(&current.pos, adjacent_cell) 
                 });
             }
         }
