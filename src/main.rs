@@ -1,13 +1,14 @@
+#![feature(variant_count)]
 use bevy::{
     prelude::*,
     sprite::MaterialMesh2dBundle,
     utils::{HashMap, HashSet},
 };
 use noise::{NoiseFn, SuperSimplex};
-use std::{collections::hash_map, time::Duration};
+use std::{collections::hash_map, mem, time::Duration};
 
 const DISTANCE_FACTOR: f32 = 100.0;
-#[derive(Eq, PartialEq, Hash, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone, Copy)]
 enum Heading {
     N,
     NE,
@@ -74,16 +75,13 @@ fn main() {
         .run();
 }
 
-fn print_grid(mut movement_grid_q: Query<&mut MovementGrid>) {
+fn print_grid(mut gridmap_q: Query<&mut MovementGrid>) {
     println!("___________________");
-    match movement_grid_q.get_single_mut() {
-        Ok(mut movement_grid) => {
-            for j in 0..movement_grid.grid[0].len() as usize {
-                for i in 0..movement_grid.grid.len() {
-                    print!(
-                        "|{}",
-                        movement_grid.grid[i][movement_grid.grid[0].len() - 1 - j]
-                    );
+    match gridmap_q.get_single_mut() {
+        Ok(mut gridmap) => {
+            for j in 0..gridmap.grid[0].len() as usize {
+                for i in 0..gridmap.grid.len() {
+                    print!("|{}", gridmap.grid[i][gridmap.grid[0].len() - 1 - j]);
                 }
                 println!("|")
             }
@@ -185,14 +183,14 @@ fn generate_grid(
     asset_server: Res<AssetServer>,
     grid_settings: Res<GridSettings>,
 ) {
-    let mut movement_grid: MovementGrid = MovementGrid { grid: Vec::new() };
+    let mut gridmap: MovementGrid = MovementGrid { grid: Vec::new() };
     //    commands.spawn().insert(MovementGrid{
     //        grid: Vec::new()
     //    });
     for i in 0..grid_settings.grid_width as usize {
-        movement_grid.grid.push(Vec::new());
+        gridmap.grid.push(Vec::new());
         for j in 0..grid_settings.grid_height as usize {
-            movement_grid.grid[i].push(0);
+            gridmap.grid[i].push(0);
             commands.spawn_bundle(SpriteBundle {
                 texture: asset_server.load("bloody_rectangle.png"),
 
@@ -207,7 +205,7 @@ fn generate_grid(
             });
         }
     }
-    commands.spawn((movement_grid));
+    commands.spawn((gridmap));
     println!("inserted");
 }
 
@@ -216,17 +214,17 @@ fn generate_obstacles(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     grid_settings: Res<GridSettings>,
-    mut movement_grid_q: Query<&mut MovementGrid>,
+    mut gridmap_q: Query<&mut MovementGrid>,
 ) {
     let noise_generator: SuperSimplex = SuperSimplex::new(SuperSimplex::DEFAULT_SEED);
-    //    let mut movement_grid : &MovementGrid;
-    match movement_grid_q.get_single_mut() {
-        Ok(mut movement_grid) => {
+    //    let mut gridmap : &MovementGrid;
+    match gridmap_q.get_single_mut() {
+        Ok(mut gridmap) => {
             for i in 0..grid_settings.grid_width as usize {
                 for j in 0..grid_settings.grid_height as usize {
                     // println!("{}", noise_generator.get([i as f64, j as f64]));
                     if noise_generator.get([i as f64, j as f64]) > grid_settings.density {
-                        movement_grid.grid[i][j] = 1;
+                        gridmap.grid[i][j] = 1;
                         commands.spawn_bundle(MaterialMesh2dBundle {
                             mesh: meshes
                                 .add(
@@ -283,7 +281,7 @@ fn reconstruct_path(
     // println!("{:?}", total_path);
     return total_path;
 }
-#[derive(Hash, Eq, Clone)]
+#[derive(Hash, Eq, Clone, Copy)]
 struct AStarNode {
     pos: UVec2,
     heading: Heading,
@@ -295,7 +293,7 @@ impl PartialEq for AStarNode {
 }
 fn calculate_a_star(
     mut movables: Query<(Entity, &mut Transform, &mut MoveCommand), Without<Movable>>,
-    mut movement_grid_q: Query<&mut MovementGrid>,
+    mut gridmap_q: Query<&mut MovementGrid>,
     mut commands: Commands,
 ) //-> Option<Vec<UVec2>>
 {
@@ -305,8 +303,8 @@ fn calculate_a_star(
             commands.entity(entity).remove::<MoveCommand>();
             continue;
         }
-        match movement_grid_q.get_single_mut() {
-            Ok(movement_grid) => {
+        match gridmap_q.get_single_mut() {
+            Ok(gridmap) => {
                 // let start: UVec2 = UVec2 {
                 //     x: transform.translation.x.floor() as u32,
                 //     y: transform.translation.y.floor() as u32,
@@ -323,11 +321,25 @@ fn calculate_a_star(
 
                     heading: Heading::N,
                 };
+                let movement_grid: Vec<Vec<Vec<AStarNode>>> = vec![
+                    vec![
+                        vec![
+                            AStarNode {
+                                pos: UVec2::ZERO,
+                                heading: Heading::N
+                            };
+                            gridmap.grid.len()
+                        ];
+                        gridmap.grid[0].len()
+                    ];
+                    mem::variant_count::<Heading>()
+                ];
+                // rewrite as a bloody vector...
+                let mut all_nodes: HashSet<AStarNode> = HashSet::new();
                 let mut f_score: HashMap<&AStarNode, u32> = HashMap::from([(
                     &start,
                     (heuristical_distance(&start, &target_node) * DISTANCE_FACTOR) as u32,
                 )]);
-                let mut all_nodes: HashSet<AStarNode> = HashSet::new();
                 let mut g_score: HashMap<&AStarNode, u32> = HashMap::from([(&start, 0)]);
                 let mut came_from: HashMap<&AStarNode, &AStarNode> = HashMap::new();
                 let mut open_set: HashSet<&AStarNode> = HashSet::from([&start]);
@@ -365,12 +377,27 @@ fn calculate_a_star(
                         return;
                     }
                     open_set.remove(&current);
-                    let neighbours: Vec<AStarNode> = get_neighbours(&current, &movement_grid);
+                    let mut neighbours: HashSet<AStarNode> = HashSet::new();
+                    get_neighbours(&current, &gridmap, &mut neighbours);
+
+                    for neighbour in &neighbours {
+                        all_nodes.insert(neighbour.clone());
+                    }
                     for neighbour in neighbours {
                         let tentative_g_score: u32 = g_score[&current]
                             + (inertia_based_inter_cell_movement(current.pos, neighbour.pos)
                                 * DISTANCE_FACTOR) as u32;
                         let mut new_path: bool = false;
+
+                        let node: &AStarNode;
+                        match all_nodes.get(&neighbour) {
+                            Some(n) => node = n,
+                            None => {
+                                println!("For some fucking reason I could not find the neighbour in neighbours...");
+                                continue;
+                            }
+                        }
+
                         match g_score.get_mut(&neighbour) {
                             Some(n_g_score) => {
                                 if tentative_g_score < *n_g_score {
@@ -379,8 +406,7 @@ fn calculate_a_star(
                                 }
                             }
                             None => {
-                                let node: &AStarNode = all_nodes.get_or_insert(neighbour);
-
+                                // all_nodes.insert(neighbour.clone());
                                 g_score.insert(node, tentative_g_score);
 
                                 new_path = true;
@@ -388,12 +414,12 @@ fn calculate_a_star(
                         }
                         if new_path {
                             f_score.insert(
-                                &neighbour,
+                                node,
                                 (heuristical_distance(&neighbour, &target_node) * DISTANCE_FACTOR)
                                     as u32,
                             );
-                            came_from.insert(&neighbour, current);
-                            open_set.insert(&neighbour);
+                            came_from.insert(&node, current);
+                            open_set.insert(&node);
                         }
                     }
                 }
@@ -408,7 +434,7 @@ fn calculate_a_star(
 
 fn visualise_path(
     mut movables: Query<(Entity, &mut Transform, &mut MoveCommand), With<Movable>>,
-    mut movement_grid_q: Query<&mut MovementGrid>,
+    mut gridmap_q: Query<&mut MovementGrid>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     grid_settings: Res<GridSettings>,
@@ -492,8 +518,11 @@ fn calculate_heading(from: &UVec2, to: &UVec2) -> Heading {
     }
     return heading;
 }
-fn get_neighbours(current: &AStarNode, movement_grid: &MovementGrid) -> Vec<AStarNode> {
-    let mut adjacent_cells: Vec<AStarNode> = Vec::new();
+fn get_neighbours(
+    current: &AStarNode,
+    gridmap: &MovementGrid,
+    grid_nodes: &mut HashSet<AStarNode>,
+) {
     for x in -1..2 {
         for y in -1..2 {
             let adjacent_cell: IVec2 = IVec2 {
@@ -501,12 +530,12 @@ fn get_neighbours(current: &AStarNode, movement_grid: &MovementGrid) -> Vec<ASta
                 y: current.pos.y as i32 + y,
             };
             if adjacent_cell.x >= 0
-                && (adjacent_cell.x as usize) < movement_grid.grid.len()
+                && (adjacent_cell.x as usize) < gridmap.grid.len()
                 && adjacent_cell.y >= 0
-                && (adjacent_cell.y as usize) < movement_grid.grid[0].len()
-                && movement_grid.grid[adjacent_cell.x as usize][adjacent_cell.y as usize] == 0
+                && (adjacent_cell.y as usize) < gridmap.grid[0].len()
+                && gridmap.grid[adjacent_cell.x as usize][adjacent_cell.y as usize] == 0
             {
-                adjacent_cells.push(AStarNode {
+                grid_nodes.insert(AStarNode {
                     pos: UVec2 {
                         x: adjacent_cell.x as u32,
                         y: adjacent_cell.y as u32,
@@ -516,5 +545,5 @@ fn get_neighbours(current: &AStarNode, movement_grid: &MovementGrid) -> Vec<ASta
             }
         }
     }
-    return adjacent_cells;
+    return;
 }
