@@ -283,8 +283,9 @@ fn reconstruct_path(
 }
 #[derive(Hash, Eq, Clone, Copy)]
 struct AStarNode {
-    pos: UVec2,
-    heading: Heading,
+    f_score: f32,
+    g_score: f32,
+    came_from: Option<UVec2>,
 }
 impl PartialEq for AStarNode {
     fn eq(&self, other: &Self) -> bool {
@@ -305,10 +306,6 @@ fn calculate_a_star(
         }
         match gridmap_q.get_single_mut() {
             Ok(gridmap) => {
-                // let start: UVec2 = UVec2 {
-                //     x: transform.translation.x.floor() as u32,
-                //     y: transform.translation.y.floor() as u32,
-                // };
                 let target_node: AStarNode = AStarNode {
                     pos: movcmd.target.as_uvec2(),
                     heading: Heading::N,
@@ -321,20 +318,21 @@ fn calculate_a_star(
 
                     heading: Heading::N,
                 };
-                let movement_grid: Vec<Vec<Vec<AStarNode>>> = vec![
+                let mut movement_grid: Vec<Vec<HashMap<Heading, AStarNode>>> = vec![
                     vec![
                         vec![
                             AStarNode {
-                                pos: UVec2::ZERO,
-                                heading: Heading::N
+                                f_score: 0.0,
+                                g_score: 0.0,
+                                came_from: None
                             };
                             gridmap.grid.len()
                         ];
                         gridmap.grid[0].len()
                     ];
-                    mem::variant_count::<Heading>()
+                    mem::variant_count::<Heading>(
+                    )
                 ];
-                // rewrite as a bloody vector...
                 let mut all_nodes: HashSet<AStarNode> = HashSet::new();
                 let mut f_score: HashMap<&AStarNode, u32> = HashMap::from([(
                     &start,
