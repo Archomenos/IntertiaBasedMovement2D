@@ -1,11 +1,11 @@
 #![feature(variant_count)]
-use bevy::{
-    prelude::*,
-    sprite::MaterialMesh2dBundle,
-    utils::{HashMap, HashSet},
-};
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use noise::{NoiseFn, SuperSimplex};
-use std::{collections::hash_map, mem, time::Duration};
+use std::{
+    collections::{hash_map, HashMap, HashSet},
+    mem,
+    time::Duration,
+};
 
 const DISTANCE_FACTOR: f32 = 100.0;
 #[derive(Eq, PartialEq, Hash, Clone, Copy)]
@@ -306,26 +306,31 @@ fn calculate_a_star(
         }
         match gridmap_q.get_single_mut() {
             Ok(gridmap) => {
-                let target_node: AStarNode = AStarNode {
-                    pos: movcmd.target.as_uvec2(),
-                    heading: Heading::N,
-                };
-                let start: AStarNode = AStarNode {
-                    pos: UVec2 {
-                        x: transform.translation.x.floor() as u32,
-                        y: transform.translation.y.floor() as u32,
-                    },
+                let target: UVec2 = movcmd.target.as_uvec2();
+                // let start: AStarNode = AStarNode {
+                //     pos: UVec2 {
+                //         x: transform.translation.x.floor() as u32,
+                //         y: transform.translation.y.floor() as u32,
+                //     },
 
-                    heading: Heading::N,
-                };
+                //     heading: Heading::N,
+                // };
+    let test_hashmap: HashMap<TestEnum, String> = TestEnum::iter()
+        .map(|x| (x.clone(), format!("{:?}", x)))
+        .into_iter()
+        .collect();
                 let mut movement_grid: Vec<Vec<HashMap<Heading, AStarNode>>> = vec![
                     vec![
-                        vec![
-                            AStarNode {
+                        HashMap<Heading, AStarNode> = Heading::iter()
+                            .map(|x| (x.clone(), AStarNode {
                                 f_score: 0.0,
                                 g_score: 0.0,
                                 came_from: None
-                            };
+                            })
+                            .into_iter()
+                            .collect()
+                            
+                            ;
                             gridmap.grid.len()
                         ];
                         gridmap.grid[0].len()
@@ -334,13 +339,20 @@ fn calculate_a_star(
                     )
                 ];
                 let mut all_nodes: HashSet<AStarNode> = HashSet::new();
-                let mut f_score: HashMap<&AStarNode, u32> = HashMap::from([(
-                    &start,
-                    (heuristical_distance(&start, &target_node) * DISTANCE_FACTOR) as u32,
+                // let mut f_score: HashMap<&AStarNode, u32> = HashMap::from([(
+                //     &start,
+                //     (heuristical_distance(&start, &target_node) * DISTANCE_FACTOR) as u32,
+                // )]);
+                // let mut g_score: HashMap<&AStarNode, u32> = HashMap::from([(&start, 0)]);
+                // let mut came_from: HashMap<&AStarNode, &AStarNode> = HashMap::new();
+                let mut open_set: HashSet<&(UVec2, Heading)> = HashSet::from([(
+                    UVec2 {
+                        x: transform.translation.x.floor(),
+                        y: transform.translation.y.floor(),
+                    },
+                    Heading::N,
                 )]);
-                let mut g_score: HashMap<&AStarNode, u32> = HashMap::from([(&start, 0)]);
-                let mut came_from: HashMap<&AStarNode, &AStarNode> = HashMap::new();
-                let mut open_set: HashSet<&AStarNode> = HashSet::from([&start]);
+
                 while !open_set.is_empty() {
                     // let mut current_node, current_cost :
                     let mut count_vec: Vec<_> = f_score.iter().collect();

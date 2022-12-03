@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 bevy = "0.9"
 noise = "0.8"
+strum = "*"
+strum_macros = "*"
