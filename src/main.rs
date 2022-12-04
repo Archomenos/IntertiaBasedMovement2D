@@ -10,7 +10,7 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 const DISTANCE_FACTOR: f32 = 100.0;
-#[derive(Eq, PartialEq, Hash, Clone, Copy, EnumIter)]
+#[derive(Eq, PartialEq, Hash, Clone, Copy, EnumIter, Debug)]
 enum Heading {
     N,
     NE,
@@ -279,8 +279,9 @@ fn reconstruct_path(
     while came_from.contains_key(&current) {
         current = came_from[&current];
         total_path.push(current.clone());
+        println!("{:?}", current);
     }
-    // println!("{:?}", total_path);
+    println!("{:?}", total_path);
     return total_path;
 }
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
@@ -309,17 +310,8 @@ fn calculate_a_star(
         match gridmap_q.get_single_mut() {
             Ok(gridmap) => {
                 let target: UVec2 = movcmd.target.as_uvec2();
-                // let start: AStarNode = AStarNode {
-                //     pos: UVec2 {
-                //         x: transform.translation.x.floor() as u32,
-                //         y: transform.translation.y.floor() as u32,
-                //     },
 
-                //     heading: Heading::N,
-                // };
-
-                let mut movement_grid: Vec<Vec<HashMap<Heading, AStarNode>>> =
-                    vec![
+                let mut movement_grid: Vec<Vec<HashMap<Heading, AStarNode>>> = vec![
                         vec![Heading::iter()
                             .map(|x| (
                                 x.clone(),
@@ -330,16 +322,11 @@ fn calculate_a_star(
                                 }
                             ))
                             .into_iter()
-                            .collect()];
-                        gridmap.grid.len()
+                            .collect();
+                        gridmap.grid.len()];
+                gridmap.grid[0].len()
                     ];
-                gridmap.grid[0].len();
-
-                // let mut f_score: HashMap<&AStarNode, u32> = HashMap::from([(
-                //     &start,
-                //     (heuristical_distance(&start, &target_node) * DISTANCE_FACTOR) as u32,
-                // )]);
-                // let mut g_score: HashMap<&AStarNode, u32> = HashMap::from([(&start, 0)]);
+                // println!("X_Length: {}, Y_Length: {}, Headings: {}", gridmap.grid.len(), gridmap)
                 let mut came_from: HashMap<(UVec2, Heading), (UVec2, Heading)> = HashMap::new();
                 let mut open_set: HashSet<(UVec2, Heading)> = HashSet::from([(
                     UVec2 {
@@ -350,13 +337,11 @@ fn calculate_a_star(
                 )]);
 
                 while !open_set.is_empty() {
-                    // let mut current_node, current_cost :
-                    // let mut count_vec: Vec<_> = f_score.iter().collect();
-                    // count_vec.sort_by_key(|a| a.1);
                     let mut current: (UVec2, Heading) = (UVec2::ZERO, Heading::N);
+
                     let mut current_cost = 0;
                     for open_cell in open_set.clone() {
-                        :wqlet mut cell: &AStarNode = movement_grid[open_cell.0.x as usize]
+                        let mut cell: &AStarNode = movement_grid[open_cell.0.x as usize]
                             [open_cell.0.y as usize]
                             .get_mut(&open_cell.1)
                             .unwrap();
@@ -366,13 +351,24 @@ fn calculate_a_star(
                             current_cost = cell_f_score;
                         }
                     }
+
+                    let current_node: AStarNode = movement_grid[current.0.x as usize]
+                        [current.0.y as usize]
+                        .get(&current.1)
+                        .unwrap()
+                        .to_owned();
                     if current.0 == movcmd.target.as_uvec2() {
+                        println!("Found the target");
+                        println!("Current {:?}", current);
+                        println!("Came From list {:?}", came_from.contains_key(&current));
+
                         for node in reconstruct_path(&came_from, current) {
                             if node.0.x != transform.translation.x.floor() as u32
                                 && node.0.y != transform.translation.y.floor() as u32
                                 && node.0 != movcmd.target.as_uvec2()
                             {
                                 movcmd.path.push(node);
+                                println!("{:?}", node);
                             }
 
                             commands.entity(entity).insert(Movable {});
@@ -381,45 +377,25 @@ fn calculate_a_star(
                     }
                     open_set.remove(&current);
                     let neighbours = get_neighbours(current.0, &gridmap);
-
+                    // println!("Current: {:?}", current);
                     for neighbour in neighbours {
-                        
-                        let tentative_g_score: u32 = g_score[&current]
-                            + (inertia_based_inter_cell_movement(current.pos, neighbour.pos)
+                        // println!("{:?}", neighbour);
+                        let mut neighbour_node: &mut AStarNode = movement_grid
+                            [neighbour.0.x as usize][neighbour.0.y as usize]
+                            .get_mut(&neighbour.1)
+                            .unwrap();
+                        let tentative_g_score: u32 = current_node.g_score
+                            + (inertia_based_inter_cell_movement(current.0, neighbour.0)
                                 * DISTANCE_FACTOR) as u32;
-                        let mut new_path: bool = false;
 
-                        let node: &AStarNode;
-                        match all_nodes.get(&neighbour) {
-                            Some(n) => node = n,
-                            None => {
-                                println!("For some fucking reason I could not find the neighbour in neighbours...");
-                                continue;
-                            }
-                        }
-
-                        match g_score.get_mut(&neighbour) {
-                            Some(n_g_score) => {
-                                if tentative_g_score < *n_g_score {
-                                    *n_g_score = tentative_g_score;
-                                    new_path = true;
-                                }
-                            }
-                            None => {
-                                // all_nodes.insert(neighbour.clone());
-                                g_score.insert(node, tentative_g_score);
-
-                                new_path = true;
-                            }
-                        }
-                        if new_path {
-                            f_score.insert(
-                                node,
-                                (heuristical_distance(&neighbour, &target_node) * DISTANCE_FACTOR)
-                                    as u32,
-                            );
-                            came_from.insert(&node, current);
-                            open_set.insert(&node);
+                        if tentative_g_score < neighbour_node.g_score || neighbour_node.g_score == 0
+                        {
+                            neighbour_node.g_score = tentative_g_score;
+                            neighbour_node.f_score = tentative_g_score
+                                + (heuristical_distance(neighbour, (target, None))
+                                    * DISTANCE_FACTOR) as u32;
+                            came_from.insert(neighbour, current);
+                            open_set.insert(neighbour);
                         }
                     }
                 }
@@ -429,6 +405,7 @@ fn calculate_a_star(
             }
         }
     }
+    println!("Failure");
     return; // None;
 }
 
@@ -447,7 +424,7 @@ fn visualise_path(
     if timer.0.finished() {
         timer.0.set_duration(Duration::from_millis(150));
         for (entity, transform, mut movcmd) in movables.iter_mut() {
-            let node: AStarNode;
+            let node: (UVec2, Heading);
             match movcmd.path.pop() {
                 Some(n) => node = n,
                 None => {
@@ -457,7 +434,7 @@ fn visualise_path(
                     continue;
                 }
             }
-            commands.spawn_bundle(MaterialMesh2dBundle {
+            commands.spawn(MaterialMesh2dBundle {
                 mesh: meshes
                     .add(
                         shape::Box::new(
@@ -471,8 +448,8 @@ fn visualise_path(
                 material: materials.add(ColorMaterial::from(Color::BLUE)),
                 transform: Transform::from_scale(Vec3::new(1.0, 1.0, 1.0)).with_translation(
                     Vec3::new(
-                        node.pos.x as f32 * grid_settings.cell_size - grid_settings.x_y_offset.x,
-                        node.pos.y as f32 * grid_settings.cell_size - grid_settings.x_y_offset.y,
+                        node.0.x as f32 * grid_settings.cell_size - grid_settings.x_y_offset.x,
+                        node.0.y as f32 * grid_settings.cell_size - grid_settings.x_y_offset.y,
                         1.0,
                     ),
                 ),
@@ -487,14 +464,14 @@ fn inertia_based_inter_cell_movement(from: UVec2, to: UVec2) -> f32 {
     let inertia: f32 = 0.0;
     let penalty: f32 = 0.0;
     let cost: f32 = from.as_vec2().distance(to.as_vec2()) + penalty;
-    println!(
-        "from {:?} to {:?} penalty {:?}, cost {:?}",
-        from, to, penalty, cost
-    );
+    // println!(
+    //     "from {:?} to {:?} penalty {:?}, cost {:?}",
+    //     from, to, penalty, cost
+    // );
     return cost;
 }
-fn heuristical_distance(from: &AStarNode, to: &AStarNode) -> f32 {
-    return from.pos.as_vec2().distance(to.pos.as_vec2());
+fn heuristical_distance(from: (UVec2, Heading), to: (UVec2, Option<Heading>)) -> f32 {
+    return from.0.as_vec2().distance(to.0.as_vec2());
 }
 fn calculate_heading(from: &UVec2, to: &UVec2) -> Heading {
     let diff: IVec2 = from.as_ivec2() - to.as_ivec2();
@@ -518,26 +495,40 @@ fn calculate_heading(from: &UVec2, to: &UVec2) -> Heading {
     }
     return heading;
 }
+fn check_path_width(current: UVec2, target: UVec2, gridmap: &MovementGrid) -> bool {
+    if current.x != target.x && current.y != target.y {
+        if gridmap.grid[current.x as usize][target.y as usize] != 0
+            && gridmap.grid[target.x as usize][current.y as usize] != 0
+        {
+            println!("current {} neighbour {}", current, target);
+            return false;
+        }
+    }
+    return true;
+}
 fn get_neighbours(current: UVec2, gridmap: &MovementGrid) -> Vec<(UVec2, Heading)> {
-    let neighbours: Vec<(UVec2, Heading)> = Vec::new();
+    let mut neighbours: Vec<(UVec2, Heading)> = Vec::new();
     for x in -1..2 {
         for y in -1..2 {
             let adjacent_cell: IVec2 = IVec2 {
                 x: current.x as i32 + x,
                 y: current.y as i32 + y,
             };
+
             if adjacent_cell.x >= 0
                 && (adjacent_cell.x as usize) < gridmap.grid.len()
                 && adjacent_cell.y >= 0
                 && (adjacent_cell.y as usize) < gridmap.grid[0].len()
                 && gridmap.grid[adjacent_cell.x as usize][adjacent_cell.y as usize] == 0
+                && adjacent_cell.as_uvec2() != current
+                && check_path_width(current, adjacent_cell.as_uvec2(), &gridmap)
             {
                 neighbours.push((
                     UVec2 {
                         x: adjacent_cell.x as u32,
                         y: adjacent_cell.y as u32,
                     },
-                    calculate_heading(&current.pos, &adjacent_cell.as_uvec2()),
+                    calculate_heading(&current, &adjacent_cell.as_uvec2()),
                 ));
             }
         }
