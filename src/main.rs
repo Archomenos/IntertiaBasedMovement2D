@@ -50,7 +50,18 @@ struct Path {
 }
 #[derive(Resource)]
 struct AStarTimer(Timer);
-
+fn calculate_base_inertia(heading_in: Heading, heading_out: Heading) -> u32 {
+    println!("Heading in {:?}, Heading out {:?}", heading_in, heading_out);
+    let mut penalty: u32 = 0;
+    let difference: i32 = (heading_out as i32 - heading_in as i32).abs();
+    let half_headings: i32 = (Heading::iter().len() as f32 / 2.0).ceil() as i32;
+    println!("difference {} half_headings {}", difference, half_headings);
+    // if difference.abs() > half_headings {
+    penalty = (half_headings - (difference - half_headings).abs()) as u32;
+    // }
+    println!("penalty {}", penalty);
+    return penalty;
+}
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -59,7 +70,7 @@ fn main() {
             grid_width: 26,
             grid_height: 26,
             x_y_offset: Vec2::new(500.0, 500.0),
-            density: 0.4,
+            density: 0.2,
         })
         .insert_resource(AStarTimer(Timer::new(
             Duration::from_millis(1500),
@@ -113,6 +124,7 @@ fn setup(
         },
         ..default()
     });
+    let target: Vec2 = Vec2 { x: 21.0, y: 20.0 };
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("kill_me.png"),
@@ -128,7 +140,7 @@ fn setup(
             ..default()
         })
         .insert(MoveCommand {
-            target: Vec2 { x: 7.0, y: 20.0 },
+            target: target,
             path: Vec::new(),
         });
     commands.spawn_bundle(MaterialMesh2dBundle {
@@ -144,8 +156,8 @@ fn setup(
             .into(),
         material: materials.add(ColorMaterial::from(Color::GOLD)),
         transform: Transform::from_scale(Vec3::new(1.0, 1.0, 1.0)).with_translation(Vec3::new(
-            7 as f32 * grid_settings.cell_size - grid_settings.x_y_offset.x,
-            20 as f32 * grid_settings.cell_size - grid_settings.x_y_offset.y,
+            target.x * grid_settings.cell_size - grid_settings.x_y_offset.x,
+            target.y as f32 * grid_settings.cell_size - grid_settings.x_y_offset.y,
             1.0,
         )),
         ..default()
@@ -286,8 +298,8 @@ fn reconstruct_path(
 }
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
 struct AStarNode {
-    f_score: u32,
-    g_score: u32,
+    f_score: i32,
+    g_score: i32,
     came_from: Option<UVec2>,
 }
 // impl PartialEq for AStarNode {
@@ -316,8 +328,8 @@ fn calculate_a_star(
                             .map(|x| (
                                 x.clone(),
                                 AStarNode {
-                                    f_score: 0,
-                                    g_score: 0,
+                                    f_score: -1,
+                                    g_score: -1,
                                     came_from: None
                                 }
                             ))
@@ -335,7 +347,11 @@ fn calculate_a_star(
                     },
                     Heading::N,
                 )]);
-
+                movement_grid[transform.translation.x.floor() as usize]
+                    [transform.translation.y.floor() as usize]
+                    .get_mut(&Heading::N)
+                    .unwrap()
+                    .g_score = 0;
                 while !open_set.is_empty() {
                     let mut current: (UVec2, Heading) = (UVec2::ZERO, Heading::N);
 
@@ -345,7 +361,7 @@ fn calculate_a_star(
                             [open_cell.0.y as usize]
                             .get_mut(&open_cell.1)
                             .unwrap();
-                        let cell_f_score: u32 = cell.f_score;
+                        let cell_f_score: i32 = cell.f_score;
                         if current_cost == 0 || cell_f_score < current_cost {
                             current = open_cell;
                             current_cost = cell_f_score;
@@ -358,13 +374,9 @@ fn calculate_a_star(
                         .unwrap()
                         .to_owned();
                     if current.0 == movcmd.target.as_uvec2() {
-                        println!("Found the target");
-                        println!("Current {:?}", current);
-                        println!("Came From list {:?}", came_from.contains_key(&current));
-
                         for node in reconstruct_path(&came_from, current) {
-                            if node.0.x != transform.translation.x.floor() as u32
-                                && node.0.y != transform.translation.y.floor() as u32
+                            if !(node.0.x == transform.translation.x.floor() as u32
+                                && node.0.y == transform.translation.y.floor() as u32)
                                 && node.0 != movcmd.target.as_uvec2()
                             {
                                 movcmd.path.push(node);
@@ -384,16 +396,17 @@ fn calculate_a_star(
                             [neighbour.0.x as usize][neighbour.0.y as usize]
                             .get_mut(&neighbour.1)
                             .unwrap();
-                        let tentative_g_score: u32 = current_node.g_score
-                            + (inertia_based_inter_cell_movement(current.0, neighbour.0)
-                                * DISTANCE_FACTOR) as u32;
+                        let tentative_g_score: i32 = current_node.g_score
+                            + (inertia_based_inter_cell_movement(current, neighbour)
+                                * DISTANCE_FACTOR) as i32;
 
-                        if tentative_g_score < neighbour_node.g_score || neighbour_node.g_score == 0
+                        if tentative_g_score < neighbour_node.g_score
+                            || neighbour_node.g_score == -1
                         {
                             neighbour_node.g_score = tentative_g_score;
                             neighbour_node.f_score = tentative_g_score
                                 + (heuristical_distance(neighbour, (target, None))
-                                    * DISTANCE_FACTOR) as u32;
+                                    * DISTANCE_FACTOR) as i32;
                             came_from.insert(neighbour, current);
                             open_set.insert(neighbour);
                         }
@@ -405,7 +418,6 @@ fn calculate_a_star(
             }
         }
     }
-    println!("Failure");
     return; // None;
 }
 
@@ -460,10 +472,11 @@ fn visualise_path(
 }
 
 // TBD
-fn inertia_based_inter_cell_movement(from: UVec2, to: UVec2) -> f32 {
+fn inertia_based_inter_cell_movement(from: (UVec2, Heading), to: (UVec2, Heading)) -> f32 {
     let inertia: f32 = 0.0;
-    let penalty: f32 = 0.0;
-    let cost: f32 = from.as_vec2().distance(to.as_vec2()) + penalty;
+    let penalty: f32 = calculate_base_inertia(from.1, to.1) as f32;
+
+    let cost: f32 = from.0.as_vec2().distance(to.0.as_vec2()).abs() + penalty;
     // println!(
     //     "from {:?} to {:?} penalty {:?}, cost {:?}",
     //     from, to, penalty, cost
