@@ -78,13 +78,13 @@ fn main() {
         )))
         .add_startup_system(setup)
         .add_startup_system(generate_grid)
-        // .add_startup_system_to_stage(
-        //     bevy::app::StartupStage::PostStartup,
-        //     generate_obstacles.after(generate_grid),
-        // )
-        // .add_system(calculate_a_star)
-        // .add_system(visualise_path)
-        // .add_system(print_grid)
+        .add_startup_system_to_stage(
+            bevy::app::StartupStage::PostStartup,
+            generate_obstacles.after(generate_grid),
+        )
+        .add_system(calculate_a_star)
+        .add_system(visualise_path)
+        .add_system(print_grid)
         .run();
 }
 
