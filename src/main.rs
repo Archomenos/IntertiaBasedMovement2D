@@ -70,7 +70,7 @@ fn main() {
             grid_width: 26,
             grid_height: 26,
             x_y_offset: Vec2::new(500.0, 500.0),
-            density: 0.2,
+            density: 0.4,
         })
         .insert_resource(AStarTimer(Timer::new(
             Duration::from_millis(1500),
@@ -78,12 +78,12 @@ fn main() {
         )))
         .add_startup_system(setup)
         .add_startup_system(generate_grid)
-        .add_startup_system_to_stage(
-            bevy::app::StartupStage::PostStartup,
-            generate_obstacles.after(generate_grid),
-        )
-        .add_system(calculate_a_star)
-        .add_system(visualise_path)
+        // .add_startup_system_to_stage(
+        //     bevy::app::StartupStage::PostStartup,
+        //     generate_obstacles.after(generate_grid),
+        // )
+        // .add_system(calculate_a_star)
+        // .add_system(visualise_path)
         // .add_system(print_grid)
         .run();
 }
@@ -124,7 +124,7 @@ fn setup(
         },
         ..default()
     });
-    let target: Vec2 = Vec2 { x: 21.0, y: 20.0 };
+    let target: Vec2 = Vec2 { x: 7.0, y: 20.0 };
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("kill_me.png"),
